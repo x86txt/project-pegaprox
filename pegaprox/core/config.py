@@ -156,6 +156,8 @@ def save_config():
                     'ssh_port': getattr(manager.config, 'ssh_port', 22),
                     'ha_settings': getattr(manager.config, 'ha_settings', {}),
                     'excluded_nodes': getattr(manager.config, 'excluded_nodes', []),
+                    'api_token_user': getattr(manager.config, 'api_token_user', ''),
+                    'api_token_secret': getattr(manager.config, 'api_token_secret', ''),
                 }
                 
                 db.save_cluster(cluster_id, cluster_data)

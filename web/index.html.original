@@ -1137,6 +1137,16 @@
         .corp-dropdown { background: var(--color-card, #22343c); border: 1px solid var(--color-border, #485764); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
         .corp-dropdown button:hover { background: var(--color-hover, #29414e); }
 
+        /* LW: Mar 2026 - Right-click context menu for sidebar tree */
+        .corp-context-menu { background: #22343c; border: 1px solid #485764; box-shadow: 0 4px 16px rgba(0,0,0,0.5); min-width: 200px; max-width: 280px; padding: 4px 0; font-size: 13px; z-index: 999; }
+        .corp-ctx-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 12px; color: #adbbc4; background: none; border: none; cursor: pointer; text-align: left; white-space: nowrap; font-size: 13px; font-family: inherit; }
+        .corp-ctx-item:hover:not(:disabled) { background: #29414e; color: #e9ecef; }
+        .corp-ctx-item:disabled { opacity: 0.4; cursor: not-allowed; }
+        .corp-ctx-item.ctx-danger { color: #f54f47; }
+        .corp-ctx-item.ctx-danger:hover:not(:disabled) { background: rgba(245,79,71,0.12); color: #f54f47; }
+        .corp-ctx-separator { height: 1px; background: #37474f; margin: 4px 8px; }
+        .corp-ctx-submenu-arrow { margin-left: auto; opacity: 0.5; }
+
         /* Corporate selection highlight (sidebar tree items) */
         .corp-selected { background: var(--corp-selection, #324f61) !important; color: #fff !important; }
 

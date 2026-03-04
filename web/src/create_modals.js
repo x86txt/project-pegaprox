@@ -1599,7 +1599,7 @@
                                         <Icons.AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
                                         <div>
                                             <p className="font-medium text-yellow-200">{t('apiTokenWarningTitle') || 'API Token Authentication'}</p>
-                                            <p className="text-sm text-yellow-300/80 mt-1">{t('apiTokenWarningDesc') || 'Using API tokens is supported but not all features will work correctly.'}</p>
+                                            <p className="text-sm text-yellow-300/80 mt-1">{t('apiTokenWarningDesc')}</p>
                                         </div>
                                     </div>
                                 </div>

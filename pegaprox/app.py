@@ -92,7 +92,7 @@ def create_app():
 
     # Max request size - NS: Feb 2026 - separate limit for file uploads (#82)
     _default_max = int(os.environ.get('PEGAPROX_MAX_REQUEST_SIZE', 10 * 1024 * 1024))  # 10 MB default for API
-    _upload_max = int(os.environ.get('PEGAPROX_MAX_UPLOAD_SIZE', 4 * 1024 * 1024 * 1024))  # 4 GB for uploads
+    _upload_max = int(os.environ.get('PEGAPROX_MAX_UPLOAD_SIZE', 100 * 1024 * 1024 * 1024))  # MK: 100 GB for uploads (#116)
     app.config['MAX_CONTENT_LENGTH'] = _upload_max  # set high, we check per-route below
 
     # Request validation & rate limiting

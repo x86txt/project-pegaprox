@@ -506,7 +506,16 @@ class PegaProxManager:
             # NS: Check if using API Token (format: user@realm!tokenid)
             # API tokens have ! in the username, passwords don't
             self._using_api_token = '!' in self.config.user
-            
+            self._token_auto_created = False
+
+            # MK: Mar 2026 - prefer stored API token over password auth (#110)
+            # this lets 2FA users keep working after token was auto-created on first connect
+            _stored_token = False
+            if self.config.api_token_user and self.config.api_token_secret:
+                _stored_token = True
+                self._using_api_token = True
+                self._api_token = f"{self.config.api_token_user}={self.config.api_token_secret}"
+
             for host in hosts_to_try:
                 try:
                     # Create a temporary session just for login
@@ -518,18 +527,18 @@ class PegaProxManager:
                     if self._using_api_token:
                         # API Token auth - no ticket needed!
                         # Token goes in Authorization header: PVEAPIToken=user@realm!tokenid=secret
-                        self._api_token = f"{self.config.user}={self.config.pass_}"
+                        if not _stored_token:
+                            self._api_token = f"{self.config.user}={self.config.pass_}"
                         self._ticket = None
                         self._csrf_token = None
-                        
+
                         # Test the token by making a simple API call
                         test_url = f"https://{host}:8006/api2/json/version"
                         headers = {'Authorization': f'PVEAPIToken={self._api_token}'}
                         resp = session.get(test_url, headers=headers, timeout=10)
-                        
+
                         if resp.status_code == 200:
                             self.current_host = host
-                            # Invalidate mgmt interface cache on host change
                             if hasattr(self, "_cached_mgmt_iface"):
                                 self._cached_mgmt_iface = None
                                 self._cached_mgmt_network = None
@@ -538,34 +547,41 @@ class PegaProxManager:
                             self.last_successful_request = datetime.now()
                             self.connection_error = None
                             self.session = True
-                            
+
                             self.logger.info(f"Connected to Proxmox at {host} using API Token")
-                            
+
                             if not self.config.fallback_hosts:
                                 self._auto_discover_fallback_hosts()
-                            
+
                             return True
                         else:
                             self.logger.warning(f"API Token auth failed at {host}: {resp.status_code}")
-                    else:
+                            # NS: stored token got revoked on PVE? fall back to password
+                            if _stored_token and resp.status_code in (401, 403):
+                                self.logger.info("Stored API token rejected, trying password auth")
+                                self._using_api_token = False
+                                self._api_token = None
+                                _stored_token = False
+                                # fall through to password path below
+
+                    if not self._using_api_token:
                         # Password auth - get ticket from /access/ticket
                         login_data = {
                             'username': self.config.user,
                             'password': self.config.pass_
                         }
                         # print(f"DEBUG: trying {host}")  # dont commit this
-                        
+
                         login_url = f"https://{host}:8006/api2/json/access/ticket"
                         resp = session.post(login_url, data=login_data, timeout=10)
-                        
+
                         if resp.status_code == 200:
                             data = resp.json()['data']
                             self._ticket = data['ticket']
                             self._csrf_token = data['CSRFPreventionToken']
                             self._api_token = None
-                            
+
                             self.current_host = host
-                            # Invalidate mgmt interface cache on host change
                             if hasattr(self, "_cached_mgmt_iface"):
                                 self._cached_mgmt_iface = None
                                 self._cached_mgmt_network = None
@@ -573,21 +589,28 @@ class PegaProxManager:
                             self.is_connected = True
                             self.last_successful_request = datetime.now()
                             self.connection_error = None
-                            
+
                             # For backward compatibility - some code still checks self.session
                             # NS: this is ugly but works, passt eh
                             self.session = True  # Just a truthy value
-                            
+
                             if host != self.config.host:
                                 self.logger.warning(f"Connected to FALLBACK host {host} (primary {self.config.host} unavailable)")
                             else:
                                 self.logger.info(f"Successfully connected to Proxmox at {host}")
-                            
+
                             # Auto-discover fallback hosts if not already set
                             if not self.config.fallback_hosts:
                                 self._auto_discover_fallback_hosts()
-                            
+
+                            # MK: auto-create API token so 2FA won't lock us out later (#110)
+                            if not self.config.api_token_user:
+                                self._try_create_api_token(session, host)
+
                             return True
+                        elif resp.status_code == 401:
+                            self.logger.warning(f"Auth failed at {host} (401)")
+                            self.connection_error = "Authentication failed — if 2FA is enabled, use an API token (user@realm!tokenid)"
                         else:
                             self.logger.warning(f"Failed to login to Proxmox at {host}: {resp.status_code}")
                             # self.logger.debug(f"Response body: {resp.text}")  # too verbose
@@ -645,7 +668,57 @@ class PegaProxManager:
                 
         except Exception as e:
             self.logger.debug(f"Could not auto-discover fallback hosts: {e}")
-    
+
+    def _try_create_api_token(self, session, host):
+        """Auto-create a PVE API token so REST auth survives 2FA being enabled later.
+        SSH keeps using the password regardless. - MK Mar 2026 (#110)"""
+        try:
+            user = self.config.user  # e.g. root@pam
+            import random, string
+            suffix = ''.join(random.choices(string.digits, k=6))
+            token_id = f'pegaprox_{suffix}'
+            url = f"https://{host}:8006/api2/json/access/users/{user}/token/{token_id}"
+            # NS: need to set ticket cookie on login session, it only has it in the response not as a cookie
+            session.cookies.set('PVEAuthCookie', self._ticket)
+            headers = {'CSRFPreventionToken': self._csrf_token}
+            payload = {'privsep': '0', 'expire': '0', 'comment': 'PegaProx management token'}
+
+            resp = session.post(url, data=payload, headers=headers, timeout=10)
+
+            if resp.status_code == 200:
+                token_data = resp.json().get('data', {})
+                full_tokenid = token_data.get('full-tokenid', f'{user}!{token_id}')
+                secret = token_data.get('value', '')
+
+                if secret:
+                    self.config.api_token_user = full_tokenid
+                    self.config.api_token_secret = secret
+                    # switch REST to token auth, keep password for SSH
+                    self._api_token = f"{full_tokenid}={secret}"
+                    self._using_api_token = True
+                    self._ticket = None
+                    self._csrf_token = None
+                    self._token_auto_created = True
+                    # persist to DB
+                    try:
+                        db = get_db()
+                        db.update_cluster(self.id, {
+                            'api_token_user': full_tokenid,
+                            'api_token_secret_encrypted': db._encrypt(secret),
+                        })
+                    except:
+                        pass  # NS: non-critical, token still works in memory for this session
+                    self.logger.info(f"Auto-created API token {full_tokenid} for 2FA safety")
+                    save_config()
+            elif resp.status_code == 400:
+                # token already exists, try to use it (user might have created it manually)
+                self.logger.debug(f"API token '{token_id}' already exists for {user}")
+            else:
+                # 403 = no permission, 5xx = PVE issue - just continue with password
+                self.logger.debug(f"Could not create API token: HTTP {resp.status_code}")
+        except Exception as e:
+            self.logger.debug(f"API token creation failed (non-critical): {e}")
+
     def _get_api_url(self, path: str) -> str:
         host = self.current_host or self.config.host
         return f"https://{host}:8006/api2/json{path}"

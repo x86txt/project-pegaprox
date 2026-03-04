@@ -1072,3 +1072,126 @@
             );
         }
 
+        // NS: Mar 2026 - context menu for corporate sidebar (right-click actions)
+        function ContextMenu({ items, position, onClose }) {
+            const menuRef = React.useRef(null);
+            const [adjusted, setAdjusted] = React.useState(position);
+            const [hoveredSub, setHoveredSub] = React.useState(null);
+            const [focusIdx, setFocusIdx] = React.useState(-1);
+
+            // boundary check - flip if menu would go off screen
+            React.useLayoutEffect(() => {
+                if (!menuRef.current) return;
+                const rect = menuRef.current.getBoundingClientRect();
+                let x = position.x, y = position.y;
+                if (x + rect.width > window.innerWidth - 8) x = position.x - rect.width;
+                if (y + rect.height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - rect.height - 8);
+                if (x !== position.x || y !== position.y) setAdjusted({ x, y });
+            }, [position]);
+
+            // NS: auto-focus menu on mount so keyboard nav works immediately
+            React.useEffect(() => { menuRef.current?.focus(); }, []);
+
+            // esc to close
+            React.useEffect(() => {
+                const onKey = (e) => {
+                    if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+                };
+                document.addEventListener('keydown', onKey, true);
+                return () => document.removeEventListener('keydown', onKey, true);
+            }, [onClose]);
+
+            // keyboard nav
+            const actionableItems = items.map((item, i) => ({ ...item, _idx: i })).filter(it => !it.separator);
+            const handleKeyDown = (e) => {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setFocusIdx(prev => {
+                        const next = prev + 1;
+                        return next >= actionableItems.length ? 0 : next;
+                    });
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setFocusIdx(prev => {
+                        const next = prev - 1;
+                        return next < 0 ? actionableItems.length - 1 : next;
+                    });
+                } else if (e.key === 'Enter' && focusIdx >= 0 && focusIdx < actionableItems.length) {
+                    const item = actionableItems[focusIdx];
+                    if (item.onClick && !item.disabled && !item.submenu) {
+                        item.onClick();
+                        onClose();
+                    }
+                }
+            };
+
+            const renderSubmenu = (submenu, parentRect) => {
+                // MK: position submenu to the right, flip if no space
+                let sx = parentRect.right + 2;
+                let sy = parentRect.top;
+                if (sx + 200 > window.innerWidth) sx = parentRect.left - 202;
+                if (sy + submenu.length * 30 > window.innerHeight) sy = Math.max(8, window.innerHeight - submenu.length * 30 - 8);
+
+                return (
+                    <div className="corp-context-menu fixed rounded z-[1000]" style={{ left: sx, top: sy }} onClick={(e) => e.stopPropagation()}>
+                        {submenu.map((sub, si) => sub.separator ? (
+                            <div key={`sep-${si}`} className="corp-ctx-separator" />
+                        ) : (
+                            <button
+                                key={sub.label}
+                                className={`corp-ctx-item${sub.danger ? ' ctx-danger' : ''}`}
+                                disabled={sub.disabled}
+                                onClick={() => { if (sub.onClick) sub.onClick(); onClose(); }}
+                            >
+                                {sub.icon && <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">{sub.icon}</span>}
+                                <span>{sub.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                );
+            };
+
+            return (
+                <>
+                    {/* backdrop */}
+                    <div className="fixed inset-0 z-[998]" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
+                    {/* menu */}
+                    <div
+                        ref={menuRef}
+                        className="corp-context-menu fixed rounded z-[999]"
+                        style={{ left: adjusted.x, top: adjusted.y }}
+                        tabIndex={-1}
+                        onKeyDown={handleKeyDown}
+                    >
+                        {items.map((item, idx) => {
+                            if (item.separator) return <div key={`sep-${idx}`} className="corp-ctx-separator" />;
+
+                            const isFocused = actionableItems[focusIdx]?._idx === idx;
+                            const hasSubmenu = item.submenu && item.submenu.length > 0;
+
+                            return (
+                                <div key={item.label || idx} className="relative"
+                                    onMouseEnter={(e) => { if (hasSubmenu) setHoveredSub({ idx, rect: e.currentTarget.getBoundingClientRect() }); else setHoveredSub(null); }}
+                                >
+                                    <button
+                                        className={`corp-ctx-item${item.danger ? ' ctx-danger' : ''}${isFocused ? ' bg-[#29414e] !text-[#e9ecef]' : ''}`}
+                                        disabled={item.disabled}
+                                        onClick={() => {
+                                            if (hasSubmenu) return;
+                                            if (item.onClick) item.onClick();
+                                            onClose();
+                                        }}
+                                    >
+                                        {item.icon && <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">{item.icon}</span>}
+                                        <span className="flex-1">{item.label}</span>
+                                        {hasSubmenu && <Icons.ChevronRight className="w-3 h-3 corp-ctx-submenu-arrow" />}
+                                    </button>
+                                    {hasSubmenu && hoveredSub?.idx === idx && renderSubmenu(item.submenu, hoveredSub.rect)}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </>
+            );
+        }
+

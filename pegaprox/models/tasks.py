@@ -102,3 +102,5 @@ class PegaProxConfig:
         self.ha_settings = cluster_data.get('ha_settings', {})
         self.excluded_nodes = cluster_data.get('excluded_nodes', [])
         self.smbios_autoconfig = cluster_data.get('smbios_autoconfig', {})
+        self.api_token_user = cluster_data.get('api_token_user', '')    # NS Mar 2026 - e.g. "root@pam!pegaprox"
+        self.api_token_secret = cluster_data.get('api_token_secret', '')

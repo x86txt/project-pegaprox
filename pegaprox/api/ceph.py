@@ -20,6 +20,39 @@ def _ceph_url(manager, node, sub=''):
     return f"https://{host}:8006/api2/json/nodes/{node}/ceph{sub}"
 
 
+# MK: Mar 2026 - PVE returns OSD data as CRUSH tree, not flat list
+# need to walk the tree and pull out actual osd entries (#113)
+def _flatten_osd_tree(data):
+    """Extract flat OSD list from Proxmox CRUSH tree response."""
+    osds = []
+    if isinstance(data, dict):
+        root = data.get('root', data)
+        _walk_osd_nodes(root, None, osds)
+    elif isinstance(data, list):
+        # some PVE versions return flat array already
+        for item in data:
+            if isinstance(item, dict) and item.get('type') == 'osd':
+                osds.append(item)
+            elif isinstance(item, dict) and 'children' in item:
+                _walk_osd_nodes(item, None, osds)
+    return osds
+
+def _walk_osd_nodes(node, parent_host, out):
+    if not isinstance(node, dict):
+        return
+    ntype = node.get('type', '')
+    host = parent_host
+    if ntype == 'host':
+        host = node.get('name', parent_host)
+    if ntype == 'osd':
+        entry = dict(node)
+        if host and not entry.get('host'):
+            entry['host'] = host
+        out.append(entry)
+    for child in node.get('children', []):
+        _walk_osd_nodes(child, host, out)
+
+
 # ============================================
 # Datacenter-Level Ceph Overview
 # ============================================
@@ -91,7 +124,11 @@ def get_ceph_overview(cluster_id):
             try:
                 r = session.get(_ceph_url(manager, node, sub), timeout=10)
                 if r.status_code == 200:
-                    result[key] = r.json().get('data', [])
+                    raw = r.json().get('data', [])
+                    # MK: OSD endpoint returns CRUSH tree, flatten it (#113)
+                    if key == 'osd':
+                        raw = _flatten_osd_tree(raw)
+                    result[key] = raw
             except:
                 pass
 

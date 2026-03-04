@@ -83,7 +83,8 @@ def get_clusters():
             'fallback_hosts': mgr.config.fallback_hosts,
             'excluded_nodes': getattr(mgr.config, 'excluded_nodes', []),  # LW: Nodes excluded from balancing
             'current_host': getattr(mgr, 'current_host', None),
-            'last_run': mgr.last_run.isoformat() if mgr.last_run else None
+            'last_run': mgr.last_run.isoformat() if mgr.last_run else None,
+            'api_token_active': bool(getattr(mgr, '_using_api_token', False)),
         })
     
     # MK: Sort clusters by sort_order first, then by name for consistent ordering
@@ -120,14 +121,18 @@ def add_cluster():
     
     manager.start()
     cluster_managers[cluster_id] = manager
-    
+
     # Save configuration
     save_config()
-    
+
     # Audit log
     log_audit(request.session['user'], 'cluster.added', f"Added cluster: {data.get('name')} ({data.get('host')})")
-    
-    return jsonify({'id': cluster_id, 'message': 'Cluster added successfully'}), 201
+
+    result = {'id': cluster_id, 'message': 'Cluster added successfully'}
+    # NS: let frontend know if we auto-created an API token (#110)
+    if getattr(manager, '_token_auto_created', False):
+        result['api_token_created'] = True
+    return jsonify(result), 201
 
 
 @bp.route('/api/clusters/<cluster_id>/nodes', methods=['GET'])
@@ -196,6 +201,21 @@ def delete_cluster(cluster_id):
     
     mgr = cluster_managers[cluster_id]
     cluster_name = mgr.config.name
+
+    # NS: revoke auto-created API token on PVE before removing cluster (#110)
+    if getattr(mgr.config, 'api_token_user', '') and mgr.is_connected:
+        try:
+            token_user = mgr.config.api_token_user  # e.g. root@pam!pegaprox
+            user_part, token_id = token_user.split('!', 1)
+            url = f"https://{mgr.host}:8006/api2/json/access/users/{user_part}/token/{token_id}"
+            resp = mgr._create_session().delete(url, timeout=10)
+            if resp.status_code == 200:
+                logging.info(f"Revoked API token {token_user} on PVE")
+            else:
+                logging.warning(f"Could not revoke API token {token_user}: HTTP {resp.status_code}")
+        except Exception as e:
+            logging.debug(f"Token revocation failed (non-critical): {e}")
+
     mgr.stop()
     del cluster_managers[cluster_id]
     

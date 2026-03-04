@@ -870,6 +870,15 @@ class PegaProxDB:
                 except Exception as e:
                     logging.error(f"Failed to add smbios_autoconfig column: {e}")
 
+            # NS Mar 2026: API token fields for 2FA-safe REST auth (#110)
+            if 'api_token_user' not in cluster_columns:
+                try:
+                    cursor.execute("ALTER TABLE clusters ADD COLUMN api_token_user TEXT DEFAULT ''")
+                    cursor.execute("ALTER TABLE clusters ADD COLUMN api_token_secret_encrypted TEXT DEFAULT ''")
+                    logging.info("Added api_token columns to clusters table")
+                except Exception as e:
+                    logging.error(f"Failed to add api_token columns: {e}")
+
         except Exception as e:
             logging.error(f"Error checking clusters schema: {e}")
         
@@ -1957,6 +1966,8 @@ class PegaProxDB:
                 'ha_settings': json.loads(row['ha_settings'] or '{}'),
                 'excluded_nodes': json.loads(row['excluded_nodes'] or '[]'),
                 'smbios_autoconfig': json.loads(row['smbios_autoconfig'] or '{}'),
+                'api_token_user': row['api_token_user'] if 'api_token_user' in row.keys() else '',
+                'api_token_secret': self._decrypt(row['api_token_secret_encrypted']) if 'api_token_secret_encrypted' in row.keys() and row['api_token_secret_encrypted'] else '',
             }
 
         return clusters
@@ -2025,6 +2036,8 @@ class PegaProxDB:
             'ha_settings': json.loads(row['ha_settings'] or '{}'),
             'excluded_nodes': json.loads(row['excluded_nodes'] or '[]'),
             'smbios_autoconfig': json.loads(row['smbios_autoconfig'] or '{}'),
+            'api_token_user': row['api_token_user'] if 'api_token_user' in row.keys() else '',
+            'api_token_secret': self._decrypt(row['api_token_secret_encrypted']) if 'api_token_secret_encrypted' in row.keys() and row['api_token_secret_encrypted'] else '',
         }
 
     def save_cluster(self, cluster_id: str, data: dict):
@@ -2043,10 +2056,11 @@ class PegaProxDB:
              balance_containers, balance_local_disks, dry_run, enabled,
              ha_enabled, fallback_hosts, ssh_user, ssh_key_encrypted,
              ssh_port, ha_settings, excluded_nodes, smbios_autoconfig,
+             api_token_user, api_token_secret_encrypted,
              group_id, display_name, sort_order,
              created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?)
+                    ?, ?, ?, ?, ?, ?, ?)
         ''', (
             cluster_id,
             data.get('name', ''),
@@ -2069,6 +2083,8 @@ class PegaProxDB:
             json.dumps(data.get('ha_settings', {})),
             json.dumps(data.get('excluded_nodes', [])),
             json.dumps(data.get('smbios_autoconfig', {})),
+            data.get('api_token_user', ''),
+            self._encrypt(data.get('api_token_secret', '')) if data.get('api_token_secret') else '',
             data.get('group_id', existing['group_id'] if existing else None),
             data.get('display_name', existing['display_name'] if existing else None),
             data.get('sort_order', existing['sort_order'] if existing else None),

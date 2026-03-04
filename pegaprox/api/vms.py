@@ -660,10 +660,16 @@ def upload_to_datastore(cluster_id, storage_name):
         if not file.filename:
             return jsonify({'error': 'No file selected'}), 400
         
-        # Check file extension
+        # MK: Mar 2026 - allow disk images alongside ISOs (#115)
         filename = file.filename
-        if content_type == 'iso' and not filename.lower().endswith('.iso'):
-            return jsonify({'error': 'File must be an ISO image'}), 400
+        _allowed_ext = {
+            'iso': ('.iso',),
+            'import': ('.vmdk', '.qcow2', '.img', '.raw'),
+            'vztmpl': ('.tar.gz', '.tar.xz', '.tar.zst'),
+        }
+        allowed = _allowed_ext.get(content_type)
+        if allowed and not filename.lower().endswith(allowed):
+            return jsonify({'error': f'Invalid file type. Allowed: {", ".join(allowed)}'}), 400
         
         # Upload to Proxmox
         upload_url = f"https://{host}:8006/api2/json/nodes/{node}/storage/{storage_name}/upload"
