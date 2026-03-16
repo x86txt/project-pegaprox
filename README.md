@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.9.1.3--beta-blue" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-0.9.2--beta-blue" alt="Version"/>
   <img src="https://img.shields.io/badge/python-3.8+-green" alt="Python"/>
   <img src="https://img.shields.io/badge/license-AGPL--3.0--License-orange" alt="License"/>
 </p>
@@ -37,6 +37,7 @@ PegaProx is a powerful web-based management interface for Proxmox VE and XCP-ng 
 - 📊 **Live Metrics** - Real-time CPU, RAM, and storage monitoring via SSE
 - 🔄 **Live Migration** - Migrate VMs between nodes with one click
 - ⚖️ **Cross-Cluster Load Balancing** - Distribute workloads across clusters
+- 🔄 **Cross-Hypervisor Migration** - Migrate VMs between ESXi, Proxmox VE, and XCP-ng 
 
 ### VM & Container Management
 - ▶️ **Quick Actions** - Start, stop, restart VMs and containers
@@ -134,22 +135,32 @@ pip install -r requirements.txt
 python3 pegaprox_multi_cluster.py
 ```
 
-### Docker Image
+### Docker
+```bash
+docker compose up -d
+```
+
+Or without Compose:
+```bash
+docker run -d --name pegaprox \
+  -p 5000:5000 -p 5001:5001 -p 5002:5002 \
+  -v pegaprox-config:/app/config \
+  -v pegaprox-logs:/app/logs \
+  --restart unless-stopped \
+  ghcr.io/pegaprox/pegaprox:latest
+```
+
+For local builds:
 ```bash
 git clone https://github.com/PegaProx/project-pegaprox.git
 cd project-pegaprox
-
-# Production
 docker build -t pegaprox .
 docker run -d --name pegaprox \
-  -p 5000:5000 \
+  -p 5000:5000 -p 5001:5001 -p 5002:5002 \
   -v pegaprox-config:/app/config \
   -v pegaprox-logs:/app/logs \
   --restart unless-stopped \
   pegaprox
-
-# Development
-docker run -p 5000:5000 pegaprox --debug
 ```
 
 ### Debian Package (.deb build)

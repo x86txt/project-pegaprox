@@ -68,12 +68,15 @@ def broadcast_resources_loop():
                             try:
                                 if mgr.connect_to_proxmox():
                                     logging.info(f"[SSE] Cluster '{cid}' reconnected successfully!")
-                                    # Notify all SSE clients that cluster is back online
-                                    broadcast_sse('node_status', {
-                                        'event': 'cluster_reconnected',
-                                        'cluster_id': cid,
-                                        'message': f'Connection to cluster restored'
-                                    }, cid)
+                                    # only notify if last broadcast was >60s ago (avoid toast spam on WAN)
+                                    last_notified = getattr(mgr, '_last_reconnect_broadcast', 0)
+                                    if now - last_notified >= 60:
+                                        mgr._last_reconnect_broadcast = now
+                                        broadcast_sse('node_status', {
+                                            'event': 'cluster_reconnected',
+                                            'cluster_id': cid,
+                                            'message': f'Connection to cluster restored'
+                                        }, cid)
                                 else:
                                     logging.debug(f"[SSE] Cluster '{cid}' reconnect failed, will retry in 10s")
                             except Exception as e:
@@ -115,7 +118,7 @@ def broadcast_resources_loop():
                             # NS: Feb 2026 - Track empty responses while "connected"
                             # This catches stale tickets (Proxmox returns 401 but no exception)
                             mgr._consecutive_empty_responses = getattr(mgr, '_consecutive_empty_responses', 0) + 1
-                            if mgr._consecutive_empty_responses >= 10:  # ~10s of empty data
+                            if mgr._consecutive_empty_responses >= 30:  # ~30s of empty data, WAN needs more tolerance
                                 logging.warning(f"[SSE] Cluster '{cid}' returning empty data despite being 'connected' - forcing re-auth")
                                 mgr._consecutive_empty_responses = 0
                                 mgr.is_connected = False  # Force reconnect on next loop
