@@ -37,6 +37,7 @@ PegaProx is a powerful web-based management interface for Proxmox VE and XCP-ng 
 - 📊 **Live Metrics** - Real-time CPU, RAM, and storage monitoring via SSE
 - 🔄 **Live Migration** - Migrate VMs between nodes with one click
 - ⚖️ **Cross-Cluster Load Balancing** - Distribute workloads across clusters
+- 🔄 **Cross-Hypervisor Migration** - Migrate VMs between ESXi, Proxmox VE, and XCP-ng 
 
 ### VM & Container Management
 - ▶️ **Quick Actions** - Start, stop, restart VMs and containers
